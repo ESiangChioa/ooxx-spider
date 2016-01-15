@@ -124,7 +124,13 @@ def download(dir="images/"):
 
 
 if __name__ == '__main__':
-    if sys.argv[1] == 'crawl':
+    if len(sys.argv) >= 2:
+        if sys.argv[1] == 'crawl':
+            crawl()
+        elif sys.argv[1] == 'download':
+            download()
+    else:
+        print("crawling links")
         crawl()
-    elif sys.argv[1] == 'download':
+        print("downloading images")
         download()
