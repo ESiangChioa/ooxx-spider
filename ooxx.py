@@ -1,136 +1,116 @@
-#!/usr/bin/env python
 # coding: utf-8
 
-
-import os
-import sys
+import os 
 import re
-import shutil
-import requests
-import datetime
-from pyquery import PyQuery
-from models import ImageModel
+import sys
+import socket
+from urllib2 import URLError, HTTPError
 
-OOXX_URL = 'http://jandan.net/ooxx'
-HEADERS = {
-    'user-agent': 'Linux / Firefox 29: Mozilla/5.0 (X11; Linux x86_64; rv:29.0) Gecko/20100101 Firefox/29.0'
-}
+from core.proxy import MimiProxyFinder, ProxyPool
+from core.fetch import build_fetch
 
-class Page():
+OOXX_URL = 'https://jandan.net/ooxx'
+TIMEOUT = 5
+
+fail_count = 0
+
+
+class Page:
 
     count = 0
+    regexes = {
+        'count': re.compile(r'<span class="current-comment-page">\[(\d+)\]</span>', re.MULTILINE),
+        'image_section': re.compile(r'<li id="comment-\d+">[\s\S]*?</li>', re.MULTILINE),
+        'image_url': re.compile(r'(https?://ww.*?)" target="_blank" class="view_img_link">'),
+        'image_number': re.compile(r'<a href="https?://jandan.net/ooxx/page-\d+?#comment-\d+?">(\d+?)</a>'),
+    }
 
     @classmethod
-    def get_count(cls):
-        """return how many pages that we have"""
-        d = PyQuery(OOXX_URL, headers=HEADERS)
-        cls.count = int(d('.current-comment-page:first').text().strip('[]'))
+    def get_count(cls, proxy):
+        """returns how many pages we have"""
 
-    def __init__ (self, page_number):
-        """"shit"""
+        fetch = build_fetch(proxy=proxy)
+        front_page = fetch(OOXX_URL)
+        cls.count = int(cls.regexes['count'].findall(front_page)[0])
+
+    def __init__(self, page_number, fetch=None):
         self.number = page_number
-        self.url = self._construct_url()
+        self.fetch = fetch
 
-    def fetch(self):
-        self.html = self._fetch_html()
-        self.elements = self._get_elements()
-        self.image_items = [self._gen_item(element) for element in self.elements.items()]
+    def fetch_images(self):
 
-    def _construct_url(self):
-        """ fetch page url """
-        return '{}/page-{}'.format(OOXX_URL, self.number)
-
-    def _fetch_html(self):
-        return requests.get(self.url, headers=HEADERS).text
-
-    def _get_elements(self):
-        d = PyQuery(self.html)
-        return d('.commentlist li').not_('.row')
-
-    def _gen_item(self, element):
-        image_item = Image()
-        image_item.author = element.find('.author strong').text()
-        image_url = element.find('img').attr('src')
-        image_item.url = re.sub(r'cn/\w+/', r'cn/large/', image_url) # choose the larege version of image
-        image_item.number = element.find('.righttext').text()
-        image_item.upvote = int(element.find('.vote span').eq(1).text())
-        image_item.downvote = int(element.find('.vote span').eq(2).text())
-        image_item.crawl_time = datetime.datetime.now()
-
-        return image_item
-
-
-class Image():
-
-    def __init__(self):
-        self.author = ''
-        self.url = ''
-        self.number = 0
-        self.upvote = 0
-        self.downvote = 0
-        self.crawl_time = None
-
-    def save_to_db(self):
-        ImageModel.create(author=self.author,
-                url=self.url,
-                number=self.number,
-                upvote=self.upvote,
-                downvote=self.downvote,
-                crawl_time=self.crawl_time
-                )
-
-    def __str__(self):
-        return '{},{},{},{}'.format(
-            self.number, ' | ', self.upvote, self.downvote)
-
-
-def crawl():
-    """crawl all ooxx pages and save image urls to database"""
-    Page.get_count()
-    # unfortunately jandan doesn't offer page beyond 900
-    for i in range(900, Page.count):
-        p = Page(i)
+        images = []
+        url = '{}/page-{}'.format(OOXX_URL, self.number)
+        print("fetch image at: "+  url)
         try:
-            print('fetching ' + p.url)
-            p.fetch()
-        except requests.ConnectionError as e:
-            print("Network Error")
-        print('{} items found'.format(len(p.image_items)))
-        for item in p.image_items:
-            print(item)
-            item.save_to_db()
+            html = self.fetch(url)
+        except IOError:
+            return images
+        image_sections = self.regexes['image_section'].findall(html)
+        print "find image secions " + str(len(image_sections))
+        for image_section in image_sections:
+            try:
+                url = self.regexes['image_url'].findall(image_section)[0]
+                number = self.regexes['image_number'].findall( image_section)[0]
+            except IndexError:
+                continue
+            images.append(Image(number, url))
+        print("find images: " + str(len(images)))
+        return images
 
-def download(dir="images/"):
-    for item in ImageModel.select():
-        if not item.url:
-            continue
-        filename = dir + str(item.number) + os.path.splitext(item.url)[1]
-        if os.path.exists(filename):
-            print("skipping {}".format(item.number))
-            continue
-        print("donwloading {}".format(item.number))
-        try:
-            r = requests.get(item.url, stream=True, headers=HEADERS, timeout=10.0)
-            with open(filename, 'wb') as f:
-                r.raw.decode_content = True # force decode from gzip
-                for chunk in r.iter_content(chunk_size=100*1024):
-                    if chunk:
-                        f.write(chunk)
-                        f.flush()
-        except requests.ConnectionError as e:
-            print("Network Error")
-        except requests.exceptions.RequestException as e:
-            print("Error")
+
+class Image:
+
+    folder = 'images'
+
+    def __init__(self, number, url):
+        self.number = number
+        self.url = url
+        if not os.path.exists(self.folder):
+            os.mkdir(self.folder)
+
+    def download(self, fetch):
+        extname = os.path.splitext(self.url)[1]
+        filename = self.folder + '/' + self.number + extname
+        print("downloading: " + self.number + extname)
+        with open(filename, 'wb') as fh:
+            try:
+                fh.write(fetch(self.url))
+            except IOError:
+                print("{} download failed".format(self.number))
+
+
+def crawl(start=1):
+    fail_count = 0
+    proxy_finder = MimiProxyFinder()
+    proxy_pool = ProxyPool(finder=proxy_finder)
+    proxy_pool.refresh()
+    Page.get_count(proxy_pool.random_proxy())
+    print("we got {} pages to crawl".format(Page.count))
+    
+    for i in range(start, Page.count):
+        fetch = build_fetch(use_cookie=True, proxy=proxy_pool.random_proxy())
+        page = Page(i, fetch=fetch)
+        images = page.fetch_images()
+        if not images:
+            fail_count += 1;
+        if fail_count == 2:
+            print('too many failures, refreshing proxy pool')
+            proxy_pool.refresh()
+        for image in images:
+            try:
+                image.download(fetch=fetch)
+            except IOError:
+                pass
 
 
 if __name__ == '__main__':
-    if len(sys.argv) >= 2:
-        if sys.argv[1] == 'crawl':
-            crawl()
-        elif sys.argv[1] == 'download':
-            download()
+    if len(sys.argv) != 3:
+        print("Usage python {} crawl|download start".format(sys.argv[0]))
     else:
-        print("crawling links")
-        crawl()
-        print("downloading images")
-        download()
+        if sys.argv[1] == 'crawl':
+            start = sys.argv[2]
+            crawl(int(start))
+        elif sys.argv[2] == 'download':
+            download()
+

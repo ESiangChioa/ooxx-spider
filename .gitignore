@@ -1,6 +1,5 @@
 *.pyc
 .idea/
 .venv/
-ooxx.db
 images/
 *.swp
