@@ -8,6 +8,7 @@ from urllib2 import URLError, HTTPError
 
 from core.proxy import MimiProxyFinder, ProxyPool
 from core.fetch import build_fetch
+from core.cache import DiskCache, CacheKeyNotExistError
 
 OOXX_URL = 'https://jandan.net/ooxx'
 TIMEOUT = 5
@@ -87,10 +88,11 @@ def crawl(start=1):
     proxy_pool.refresh()
     Page.get_count(proxy_pool.random_proxy())
     print("we got {} pages to crawl".format(Page.count))
-    
+
     for i in range(start, Page.count):
-        fetch = build_fetch(use_cookie=True, proxy=proxy_pool.random_proxy())
-        page = Page(i, fetch=fetch)
+        cached_fetch = build_fetch(use_cache=True, use_cookie=True, proxy=proxy_pool.random_proxy())
+        uncached_fetch = build_fetch()
+        page = Page(i, fetch=cached_fetch)
         images = page.fetch_images()
         if not images:
             fail_count += 1;
@@ -99,7 +101,7 @@ def crawl(start=1):
             proxy_pool.refresh()
         for image in images:
             try:
-                image.download(fetch=fetch)
+                image.download(fetch=uncached_fetch)
             except IOError:
                 pass
 

@@ -3,11 +3,14 @@
 
 from cookielib import CookieJar
 from urllib2 import urlopen, Request, build_opener, HTTPCookieProcessor, ProxyHandler
+import hashlib
 
 from headers import make_headers
+from cache import DiskCache, CacheKeyNotExistError
 
-def build_fetch(timeout=5, use_cookie=False, proxy=None, mobile=False):
+def build_fetch(use_cache=False, timeout=5, use_cookie=False, proxy=None, mobile=False):
     '''build fetch fucntion with proxy'''
+
 
     if use_cookie:
         cookie_handler = HTTPCookieProcessor(CookieJar())
@@ -25,9 +28,23 @@ def build_fetch(timeout=5, use_cookie=False, proxy=None, mobile=False):
 
     opener = build_opener(*handlers)
 
+    if use_cache:
+        cache = DiskCache()
+
     def fetch(url):
+        if use_cache:
+            key = hashlib.md5(url).hexdigest()
+            try:
+                return cache.get(url)
+            except CacheKeyNotExistError:
+                pass
+
         req = Request(url, headers=make_headers(mobile=mobile))
         response = opener.open(req, timeout=timeout)
-        return response.read()
+        content = response.read()
+
+        if use_cache:
+            cache.set(key, content)
+        return content
 
     return fetch 
