@@ -1,5 +1,8 @@
 # coding: utf-8
 
+__author__ = 'Yifei Kong'
+__date__ = 'July 6th'
+
 import os 
 import re
 import sys
@@ -108,11 +111,12 @@ def crawl(start=1):
 
 if __name__ == '__main__':
     if len(sys.argv) != 3:
-        print("Usage python {} crawl|download start".format(sys.argv[0]))
+        print("Usage python {} crawl start".format(sys.argv[0]))
     else:
         if sys.argv[1] == 'crawl':
-            start = sys.argv[2]
-            crawl(int(start))
-        elif sys.argv[2] == 'download':
-            download()
+            try:
+                start = int(sys.argv[2])
+            except ValueError:
+                start = 0
+            crawl(start)
 

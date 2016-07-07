@@ -33,10 +33,10 @@ def random_user_agent():
     return random.choice([random_desktop_user_agent(), random_mobile_user_agent()])
 
 def random_desktop_user_agent():
-    return random.choice(DESKTOP_USER_AGENTS)
+    return random.choice(DESKTOP_USER_AGENTS) + str(random.randint(0, 10000))
 
 def random_mobile_user_agent():
-    return random.choice(MOBILE_USER_AGENTS)
+    return random.choice(MOBILE_USER_AGENTS) + str(random.randint(0, 10000))
 
 def make_headers(lang='en', ajax=False, accept='text/html', mobile=False):
     # TODO: implement these arguments
