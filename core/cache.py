@@ -1,6 +1,6 @@
 # coding: utf-8
 
-from abc import ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 
 
 CACHE_DIR = './.cache'
@@ -8,9 +8,8 @@ CACHE_DIR = './.cache'
 class CacheKeyNotExistError(IndexError):
     pass
 
-class ICache:
 
-    __metaclass__ = ABCMeta
+class ICache(ABC):
 
     @abstractmethod
     def get(self, key):
@@ -28,7 +27,7 @@ class DiskCache(ICache):
 
     def get(self, key):
         try:
-            with open(key) as fh:
+            with open(os.path.join(self.cache_dir, key)) as fh:
                 return fh.read()
         except IOError:
             raise CacheKeyNotExistError
