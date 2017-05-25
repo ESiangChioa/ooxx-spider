@@ -1,7 +1,7 @@
 Deprecated
 ------
 
-Please use https://github.com/yifeikong/miniscrapy. which is a simple spider I'm currently developing, it's more general.
+参见 https://github.com/yifeikong/aiospider. 更加通用
 
 
 OOXX Spider
